@@ -16,6 +16,30 @@ void print_num(int i) {
 }
 
 struct PrintNum {
+    PrintNum() = default;
+
+    PrintNum(PrintNum const &a) {
+        std::cout << "const &" << std::endl;
+    }
+
+    PrintNum &operator=(const PrintNum &other) {
+        std::cout << "const operator = " << std::endl;
+        return *this;
+    }
+
+    PrintNum &operator=(PrintNum &other) {
+        std::cout << "operator = " << std::endl;
+        return *this;
+    }
+
+    PrintNum(PrintNum &&other) {
+        std::cout << "&& constructor" << std::endl;
+    }
+
+    ~PrintNum() {
+        std::cout << "destr" << std::endl;
+    }
+
     void operator()(int i) const {
         std::cout << i << " " << "one" << '\n';
     }
@@ -30,14 +54,19 @@ int main() {
 
     function<void()> f_display_3 = std::bind(print_num, 42);
     f_display_3();
-
-    function<void(int)> f_display_31337 = PrintNum();
+    PrintNum m;
+    function<void(int)> f_display_31337(std::move(m));
+    std::cout << "1" << std::endl;
     f_display_31337(42);
+    std::cout << "2" << std::endl;
+
+
 
     auto smth = fun;
     smth(32);
 
-    auto eee = f_display_42;
+    function<void()> eee ;
+    eee = std::move(f_display_42);
     eee();
 
     auto eee1 = f_display_3;

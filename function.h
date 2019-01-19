@@ -8,7 +8,7 @@
 #include <memory>
 #include <variant>
 
-const size_t SMALL_OBJECT_CONST = 20;
+const size_t SMALL_OBJECT_CONST = 1;
 
 template<class>
 class function;
@@ -19,8 +19,6 @@ class tag {
 
 template<class R, class... Args>
 class function<R(Args...)> {
-    using f_ptr = R(*)(Args...);
-
 
 public:
     function() = default;
@@ -39,11 +37,12 @@ public:
     function &operator=(const function &other) {
         function temp(other);
         temp.swap(*this);
+        return *this;
     }
 
     function &operator=(function &&other) noexcept {
-        function temp(other);
-        temp.swap(*this);
+        swap(other);
+        return *this;
     }
 
     void swap(function &other) noexcept {
@@ -54,12 +53,29 @@ public:
         return func;
     }
 
+    template<class F>
+    function(F f) {
+        if constexpr (sizeof(f) <= SMALL_OBJECT_CONST) {
+            func = std::make_unique<template_base_small < F>>
+            (std::move(f));
+        } else {
+            func = std::make_unique<template_base_big < F>>
+            (std::move(f));
+        }
+    }
+
+    R operator()(Args &&... args) {
+        return func->eval(std::forward<Args>(args)...);
+    }
+
+    ~function() = default;
+
 private:
     class base {
     public:
         base() = default;
 
-        virtual R eval(Args... args) = 0;
+        virtual R eval(Args &&... args) = 0;
 
         virtual std::unique_ptr<base> copy() = 0;
 
@@ -69,10 +85,10 @@ private:
     template<typename Fu>
     class template_base_small : public base {
     public:
-        explicit template_base_small(Fu f) : base(), value(f) {
+        explicit template_base_small(Fu f) : base(), value(std::move(f)) {
         }
 
-        R eval(Args...args) override {
+        R eval(Args &&... args) override {
             return value(std::forward<Args>(args)...);
         }
 
@@ -89,10 +105,10 @@ private:
     template<typename Fu>
     class template_base_big : public base {
     public:
-        explicit template_base_big(Fu f) : base(), value(&f) {
+        explicit template_base_big(Fu f) : base(), value(new Fu(std::move(f))) {
         }
 
-        R eval(Args...args) override {
+        R eval(Args &&... args) override {
             return (*value)(std::forward<Args>(args)...);
         }
 
@@ -105,22 +121,6 @@ private:
     private:
         std::unique_ptr<Fu> value;
     };
-
-public:
-    template<class F>
-    function(F f) {
-        if (sizeof(f) <= SMALL_OBJECT_CONST) {
-            func = std::make_unique<template_base_small<F>>(std::forward<F>(f));
-        } else {
-            func = std::make_unique<template_base_big<F>>(std::forward<F>(f));
-        }
-    }
-
-    R operator()(Args &&... args) {
-        return func->eval(std::forward<Args>(args)...);
-    }
-
-    ~function() = default;
 
 private:
     std::unique_ptr<base> func;
