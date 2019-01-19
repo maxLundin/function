@@ -7,8 +7,9 @@
 #include <iostream>
 #include <memory>
 #include <variant>
+#include <cstring>
 
-const size_t SMALL_OBJECT_CONST = 1;
+const size_t SMALL_OBJECT_CONST = 10;
 
 template<class>
 class function;
@@ -21,21 +22,30 @@ template<class R, class... Args>
 class function<R(Args...)> {
 
 public:
-    function() = default;
+    function() : func(nullptr), is_small(false) {
+    }
 
-    explicit function(std::nullptr_t) {
-        func = nullptr;
+    explicit function(std::nullptr_t) : func(nullptr), is_small(false) {
     }
 
 
-    function(const function &other) : func(std::move(other.func->copy())) {
+    function(const function &other) : func(nullptr), is_small(other.is_small) {
+        if (is_small) {
+            memcpy(buff, other.buff, SMALL_OBJECT_CONST);
+        } else {
+            func = (std::move(other.func->copy()));
+        }
     }
 
-    function(function &&other) noexcept : func(std::move(other.func)) {
+    function(function &&other) noexcept : func(nullptr) {
+        std::swap(buff, other.buff);
+        std::swap(is_small, other.is_small);
+        other.is_small = false;
     }
 
     function &operator=(const function &other) {
         function temp(other);
+        is_small = other.is_small;
         temp.swap(*this);
         return *this;
     }
@@ -46,29 +56,47 @@ public:
     }
 
     void swap(function &other) noexcept {
-        std::swap(func, other.func);
+        std::swap(buff, other.buff);
+        std::swap(is_small, other.is_small);
     }
 
     explicit operator bool() const noexcept {
-        return func;
+        if (!is_small) {
+            return func != nullptr;
+        } else {
+            return true;
+        }
     }
 
     template<class F>
     function(F f) {
-        if constexpr (sizeof(f) <= SMALL_OBJECT_CONST) {
-            func = std::make_unique<template_base_small < F>>
-            (std::move(f));
+        if constexpr (sizeof(base_template_impl<F>(f)) <= SMALL_OBJECT_CONST) {
+//            func = std::make_unique<template_base_small < F>>
+//            (std::move(f));
+            new(buff) base_template_impl<F>(std::move(f));
+            is_small = true;
         } else {
-            func = std::make_unique<template_base_big < F>>
-            (std::move(f));
+            new(buff) std::unique_ptr<base_template_impl < F>>
+            (new base_template_impl<F>(std::move(f)));
+            is_small = false;
         }
     }
 
     R operator()(Args &&... args) {
-        return func->eval(std::forward<Args>(args)...);
+        if (!is_small) {
+            return func->eval(std::forward<Args>(args)...);
+        } else {
+            return ((base *) buff)->eval(std::forward<Args>(args)...);
+        }
     }
 
-    ~function() = default;
+    ~function() {
+        if (is_small) {
+            ((base *) buff)->~base();
+        } else {
+            func.reset();
+        }
+    }
 
 private:
     class base {
@@ -83,9 +111,9 @@ private:
     };
 
     template<typename Fu>
-    class template_base_small : public base {
+    class base_template_impl : public base {
     public:
-        explicit template_base_small(Fu f) : base(), value(std::move(f)) {
+        explicit base_template_impl(Fu f) : base(), value(std::move(f)) {
         }
 
         R eval(Args &&... args) override {
@@ -93,35 +121,20 @@ private:
         }
 
         std::unique_ptr<base> copy() override {
-            return std::make_unique<template_base_small<Fu>>(value);
+            return std::make_unique<base_template_impl<Fu>>(value);
         }
 
-        ~template_base_small() = default;
+        ~base_template_impl() = default;
 
     private:
         Fu value;
     };
 
-    template<typename Fu>
-    class template_base_big : public base {
-    public:
-        explicit template_base_big(Fu f) : base(), value(new Fu(std::move(f))) {
-        }
-
-        R eval(Args &&... args) override {
-            return (*value)(std::forward<Args>(args)...);
-        }
-
-        std::unique_ptr<base> copy() override {
-            return std::make_unique<template_base_big<Fu>>(*value);
-        }
-
-        ~template_base_big() = default;
-
-    private:
-        std::unique_ptr<Fu> value;
-    };
 
 private:
-    std::unique_ptr<base> func;
+    union {
+        std::unique_ptr<base> func;
+        char buff[std::max(SMALL_OBJECT_CONST, sizeof(std::unique_ptr<base>))];
+    };
+    bool is_small;
 };

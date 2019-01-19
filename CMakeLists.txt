@@ -3,4 +3,4 @@ project(function)
 
 set(CMAKE_CXX_STANDARD 17)
 
-add_executable(function main.cpp function.h move.h)
+add_executable(function main1.cpp function.h move.h main1.cpp)

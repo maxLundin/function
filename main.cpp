@@ -61,11 +61,10 @@ int main() {
     std::cout << "2" << std::endl;
 
 
-
     auto smth = fun;
     smth(32);
 
-    function<void()> eee ;
+    function<void()> eee;
     eee = std::move(f_display_42);
     eee();
 
