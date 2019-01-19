@@ -9,7 +9,7 @@
 #include <variant>
 #include <cstring>
 
-const size_t SMALL_OBJECT_CONST = 10;
+const size_t SMALL_OBJECT_CONST = 20;
 
 template<class>
 class function;
@@ -41,6 +41,7 @@ public:
         std::swap(buff, other.buff);
         std::swap(is_small, other.is_small);
         other.is_small = false;
+        other.func.reset(nullptr);
     }
 
     function &operator=(const function &other) {
@@ -51,7 +52,8 @@ public:
     }
 
     function &operator=(function &&other) noexcept {
-        swap(other);
+        auto temp(std::forward<function>(other));
+        swap(temp);
         return *this;
     }
 
@@ -62,17 +64,14 @@ public:
 
     explicit operator bool() const noexcept {
         if (!is_small) {
-            return func != nullptr;
-        } else {
-            return true;
+            return func.operator bool();
         }
+        return true;
     }
 
     template<class F>
     function(F f) {
         if constexpr (sizeof(base_template_impl<F>(f)) <= SMALL_OBJECT_CONST) {
-//            func = std::make_unique<template_base_small < F>>
-//            (std::move(f));
             new(buff) base_template_impl<F>(std::move(f));
             is_small = true;
         } else {
