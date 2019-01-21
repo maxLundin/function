@@ -1,3 +1,4 @@
+
 //
 // Created by max on 1/19/19.
 //
@@ -9,31 +10,51 @@
 #include <variant>
 #include <cstring>
 
-const size_t SMALL_OBJECT_CONST = 20;
+const size_t SMALL_OBJECT_CONST = 64;
 
 template<class>
 class function;
 
-template<int>
-class tag {
+template<typename T>
+struct remove_reference {
+    using type = T;
 };
+
+template<typename T>
+struct remove_reference<T &> {
+    using type = T;
+};
+
+template<typename T>
+struct remove_reference<T &&> {
+    using type = T;
+};
+
+template<typename T>
+constexpr typename remove_reference<T>::type &&my_move(T &&a) {
+    return static_cast<typename remove_reference<T>::type &&>(a);
+}
+
+template<typename T>
+constexpr T &&my_forward(typename remove_reference<T>::type &a) {
+    return static_cast<T &&>(a);
+}
+
 
 template<class R, class... Args>
 class function<R(Args...)> {
 
 public:
-    function() : func(nullptr), is_small(false) {
-    }
+    function() : func(nullptr), is_small(false) {}
 
-    explicit function(std::nullptr_t) : func(nullptr), is_small(false) {
-    }
+    explicit function(std::nullptr_t) : func(nullptr), is_small(false) {}
 
 
     function(const function &other) : func(nullptr), is_small(other.is_small) {
         if (is_small) {
-            memcpy(buff, other.buff, SMALL_OBJECT_CONST);
+            ((base *) other.buff)->copy_small((char *) buff);
         } else {
-            func = (std::move(other.func->copy()));
+            func = (my_move(other.func->copy()));
         }
     }
 
@@ -46,13 +67,12 @@ public:
 
     function &operator=(const function &other) {
         function temp(other);
-        is_small = other.is_small;
-        temp.swap(*this);
+        swap(temp);
         return *this;
     }
 
     function &operator=(function &&other) noexcept {
-        auto temp(std::forward<function>(other));
+        auto temp(my_move(other));
         swap(temp);
         return *this;
     }
@@ -72,20 +92,20 @@ public:
     template<class F>
     function(F f) {
         if constexpr (sizeof(base_template_impl<F>(f)) <= SMALL_OBJECT_CONST) {
-            new(buff) base_template_impl<F>(std::move(f));
+            new(buff) base_template_impl<F>(my_move(f));
             is_small = true;
         } else {
             new(buff) std::unique_ptr<base_template_impl < F>>
-            (new base_template_impl<F>(std::move(f)));
+            (new base_template_impl<F>(my_move(f)));
             is_small = false;
         }
     }
 
     R operator()(Args &&... args) {
         if (!is_small) {
-            return func->eval(std::forward<Args>(args)...);
+            return func->eval(my_forward<Args>(args)...);
         } else {
-            return ((base *) buff)->eval(std::forward<Args>(args)...);
+            return ((base *) buff)->eval(my_forward<Args>(args)...);
         }
     }
 
@@ -106,21 +126,27 @@ private:
 
         virtual std::unique_ptr<base> copy() = 0;
 
+        virtual void copy_small(void *) = 0;
+
         virtual ~base() {};
     };
 
     template<typename Fu>
     class base_template_impl : public base {
     public:
-        explicit base_template_impl(Fu f) : base(), value(std::move(f)) {
+        explicit base_template_impl(Fu f) : base(), value(my_move(f)) {
         }
 
         R eval(Args &&... args) override {
-            return value(std::forward<Args>(args)...);
+            return value(my_forward<Args>(args)...);
         }
 
         std::unique_ptr<base> copy() override {
             return std::make_unique<base_template_impl<Fu>>(value);
+        }
+
+        void copy_small(void *buffer) {
+            new(buffer) base_template_impl<Fu>(value);
         }
 
         ~base_template_impl() = default;
@@ -137,3 +163,6 @@ private:
     };
     bool is_small;
 };
+
+
+
