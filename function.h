@@ -10,35 +10,11 @@
 #include <variant>
 #include <cstring>
 
-const size_t SMALL_OBJECT_CONST = 64;
+const size_t SMALL_OBJECT_CONST = 120;
 
 template<class>
 class function;
 
-template<typename T>
-struct remove_reference {
-    using type = T;
-};
-
-template<typename T>
-struct remove_reference<T &> {
-    using type = T;
-};
-
-template<typename T>
-struct remove_reference<T &&> {
-    using type = T;
-};
-
-template<typename T>
-constexpr typename remove_reference<T>::type &&my_move(T &&a) {
-    return static_cast<typename remove_reference<T>::type &&>(a);
-}
-
-template<typename T>
-constexpr T &&my_forward(typename remove_reference<T>::type &a) {
-    return static_cast<T &&>(a);
-}
 
 
 template<class R, class... Args>
@@ -54,7 +30,7 @@ public:
         if (is_small) {
             ((base *) other.buff)->copy_small((char *) buff);
         } else {
-            func = (my_move(other.func->copy()));
+            func = (std::move(other.func->copy()));
         }
     }
 
@@ -72,7 +48,7 @@ public:
     }
 
     function &operator=(function &&other) noexcept {
-        auto temp(my_move(other));
+        auto temp(std::move(other));
         swap(temp);
         return *this;
     }
@@ -92,20 +68,20 @@ public:
     template<class F>
     function(F f) {
         if constexpr (sizeof(base_template_impl<F>(f)) <= SMALL_OBJECT_CONST) {
-            new(buff) base_template_impl<F>(my_move(f));
+            new(buff) base_template_impl<F>(std::move(f));
             is_small = true;
         } else {
             new(buff) std::unique_ptr<base_template_impl < F>>
-            (new base_template_impl<F>(my_move(f)));
+            (new base_template_impl<F>(std::move(f)));
             is_small = false;
         }
     }
 
     R operator()(Args &&... args) {
         if (!is_small) {
-            return func->eval(my_forward<Args>(args)...);
+            return func->eval(std::forward<Args>(args)...);
         } else {
-            return ((base *) buff)->eval(my_forward<Args>(args)...);
+            return ((base *) buff)->eval(std::forward<Args>(args)...);
         }
     }
 
@@ -134,11 +110,11 @@ private:
     template<typename Fu>
     class base_template_impl : public base {
     public:
-        explicit base_template_impl(Fu f) : base(), value(my_move(f)) {
+        explicit base_template_impl(Fu f) : base(), value(std::move(f)) {
         }
 
         R eval(Args &&... args) override {
-            return value(my_forward<Args>(args)...);
+            return value(std::forward<Args>(args)...);
         }
 
         std::unique_ptr<base> copy() override {
