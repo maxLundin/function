@@ -211,3 +211,9 @@ TEST(correctness, huge_swawps)
     EXPECT_EQ(my_f_big(2), 4);
     EXPECT_EQ(my_f_small(2), 3);
 }
+
+TEST(correctness, nullptr_copy)
+{
+    func<void> f (nullptr);
+    func <void> f1(f);
+}

@@ -16,21 +16,22 @@ template<class>
 class function;
 
 
-
 template<class R, class... Args>
 class function<R(Args...)> {
 
 public:
     function() : func(nullptr), is_small(false) {}
 
-    explicit function(std::nullptr_t) : func(nullptr), is_small(false) {}
+    function(std::nullptr_t t) : func(nullptr), is_small(false) {}
 
 
     function(const function &other) : func(nullptr), is_small(other.is_small) {
         if (is_small) {
             ((base *) other.buff)->copy_small((char *) buff);
         } else {
-            func = (std::move(other.func->copy()));
+            if (func) {
+                func = (std::move(other.func->copy()));
+            }
         }
     }
 
@@ -89,7 +90,8 @@ public:
         if (is_small) {
             ((base *) buff)->~base();
         } else {
-            func.reset();
+            if (func)
+                func.reset();
         }
     }
 
